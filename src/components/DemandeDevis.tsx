@@ -1,7 +1,29 @@
 import React, { useState } from 'react';
 import { Send, Check, FileText, Building2, User, Calculator, Briefcase, Scale, PiggyBank, FileCheck, Users, CreditCard, Upload, AlertCircle, Loader2, X } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { supabase } from '@/integrations/supabase/client';
+
+// Direct REST calls to Supabase Storage instead of the supabase-js client:
+// the installed client version throws "Invalid Compact JWS" when uploading
+// with the new sb_publishable_... key format (it expects the old JWT-style
+// anon key). The raw Storage REST API works fine with the same key.
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+async function uploadToStorage(path: string, file: File): Promise<void> {
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/lead-documents/${encodeURIComponent(path)}`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+    body: file,
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(detail || `HTTP ${res.status}`);
+  }
+}
 
 const DemandeDevis = () => {
   const { t, language } = useLanguage();
@@ -122,10 +144,12 @@ const DemandeDevis = () => {
         for (const file of documentFiles) {
           const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
           const path = `${crypto.randomUUID()}-${safeName}`;
-          const { error: uploadError } = await supabase.storage.from('lead-documents').upload(path, file);
-          if (uploadError) {
+          try {
+            await uploadToStorage(path, file);
+          } catch (uploadError) {
             console.error('Upload failed for', file.name, uploadError);
-            throw new Error(`Échec de l'envoi de "${file.name}" : ${uploadError.message}`);
+            const msg = uploadError instanceof Error ? uploadError.message : String(uploadError);
+            throw new Error(`Échec de l'envoi de "${file.name}" : ${msg}`);
           }
           documentPaths.push(path);
         }
