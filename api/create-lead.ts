@@ -679,7 +679,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
         }
 
-        await Promise.all([...fieldWrites, commentWrite]);
+        // Attach the standard onboarding checklist directly on this same task (no
+        // separate task, no data to keep in sync - it already has all the lead's
+        // fields). Ready to tick off if/when this prospect becomes a client.
+        const checklistWrite = (async () => {
+          const clResp = await fetch(`https://api.clickup.com/api/v2/task/${taskId}/checklist`, {
+            method: 'POST',
+            headers: { Authorization: CLICKUP_TOKEN, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: 'Onboarding (si accepte)' }),
+          });
+          const clData = await clResp.json();
+          const checklistId = clData?.checklist?.id;
+          if (!checklistId) return;
+          const steps = [
+            'Reception des coordonnees et documents',
+            'Verification BCE / TVA / UBO',
+            'Creation dans Fid-Manager',
+            'Preparation et signature des mandats',
+            'Creation du dossier Horus',
+            'Activation Falco et Peppol',
+            'Connexion bancaire / CODA',
+            'Recuperation du dossier precedent (ancienne fiduciaire)',
+            'Attribution du gestionnaire',
+            'Controle final et passage en Portefeuille clients actifs',
+          ];
+          for (const step of steps) {
+            await fetch(`https://api.clickup.com/api/v2/checklist/${checklistId}/checklist_item`, {
+              method: 'POST',
+              headers: { Authorization: CLICKUP_TOKEN, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: step }),
+            });
+          }
+        })();
+
+        await Promise.all([...fieldWrites, commentWrite, checklistWrite]);
 
         await supabase
           .from('leads')
