@@ -33,6 +33,9 @@ const DemandeDevis = () => {
     preferredContact: 'email',
     urgency: 'normal',
     leadSource: '',
+    iban: '',
+    bankName: '',
+    contactLanguage: '',
   });
 
   const [submitted, setSubmitted] = useState(false);
@@ -129,6 +132,9 @@ const DemandeDevis = () => {
           preferredContact: formData.preferredContact,
           urgency: formData.urgency,
           leadSource: formData.leadSource,
+          iban: formData.iban,
+          bankName: formData.bankName,
+          contactLanguage: formData.contactLanguage,
           language,
           statutsFilePath,
         }),
@@ -166,6 +172,9 @@ const DemandeDevis = () => {
         preferredContact: 'email',
         urgency: 'normal',
         leadSource: '',
+        iban: '',
+        bankName: '',
+        contactLanguage: '',
       });
       setTimeout(() => setSubmitted(false), 8000);
     } catch (err) {
@@ -530,6 +539,25 @@ const DemandeDevis = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
+                    {t('devis.contactLanguage')}
+                  </label>
+                  <select
+                    name="contactLanguage"
+                    value={formData.contactLanguage}
+                    onChange={handleInputChange}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:border-[#C6A664] focus:ring-2 focus:ring-[#C6A664]/20 outline-none transition-all"
+                  >
+                    <option value="">{t('devis.selectContactLanguage')}</option>
+                    <option value="fr">{t('devis.langFrench')}</option>
+                    <option value="nl">{t('devis.langDutch')}</option>
+                    <option value="en">{t('devis.langEnglish')}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
                     {t('devis.urgency')}
                   </label>
                   <select
@@ -542,6 +570,37 @@ const DemandeDevis = () => {
                     <option value="normal">{t('devis.normal')}</option>
                     <option value="flexible">{t('devis.flexible')}</option>
                   </select>
+                </div>
+                <div />
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
+                    {t('devis.iban')}
+                  </label>
+                  <input
+                    type="text"
+                    name="iban"
+                    value={formData.iban}
+                    onChange={handleInputChange}
+                    placeholder="BE68 5390 0754 7034"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:border-[#C6A664] focus:ring-2 focus:ring-[#C6A664]/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">{t('devis.ibanHint')}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
+                    {t('devis.bankName')}
+                  </label>
+                  <input
+                    type="text"
+                    name="bankName"
+                    value={formData.bankName}
+                    onChange={handleInputChange}
+                    placeholder={t('devis.bankNamePlaceholder')}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:border-[#C6A664] focus:ring-2 focus:ring-[#C6A664]/20 outline-none transition-all"
+                  />
                 </div>
               </div>
 

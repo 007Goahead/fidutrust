@@ -346,6 +346,15 @@ export const translations = {
     uploadStatuts: { fr: 'Statuts de la société (optionnel)', en: 'Articles of Association (optional)', nl: 'Statuten van de vennootschap (optioneel)' },
     uploadStatutsHint: { fr: 'PDF, max 10 Mo - vous pourrez aussi l\'envoyer plus tard', en: 'PDF, max 10 MB - you can also send it later', nl: 'PDF, max 10 MB - u kunt dit ook later opsturen' },
     uploading: { fr: 'Envoi du fichier...', en: 'Uploading file...', nl: 'Bestand uploaden...' },
+    iban: { fr: 'IBAN (optionnel)', en: 'IBAN (optional)', nl: 'IBAN (optioneel)' },
+    ibanHint: { fr: 'Si le compte bancaire de la société est déjà ouvert', en: 'If the company bank account is already open', nl: 'Indien de bankrekening van de vennootschap al geopend is' },
+    bankName: { fr: 'Nom de la banque (optionnel)', en: 'Bank name (optional)', nl: 'Naam van de bank (optioneel)' },
+    bankNamePlaceholder: { fr: 'ex: BNP Paribas Fortis', en: 'e.g. BNP Paribas Fortis', nl: 'bv. BNP Paribas Fortis' },
+    contactLanguage: { fr: 'Langue souhaitée pour être contacté', en: 'Preferred language to be contacted in', nl: 'Gewenste taal om gecontacteerd te worden' },
+    selectContactLanguage: { fr: 'Sélectionnez une langue', en: 'Select a language', nl: 'Selecteer een taal' },
+    langFrench: { fr: 'Français', en: 'French', nl: 'Frans' },
+    langDutch: { fr: 'Néerlandais', en: 'Dutch', nl: 'Nederlands' },
+    langEnglish: { fr: 'Anglais', en: 'English', nl: 'Engels' },
   },
 
   // Footer

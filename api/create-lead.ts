@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { matchFormula, buildProposalEmail } from './_lib/pricing';
 
 // Server-only env vars (never prefixed with VITE_, never shipped to the browser).
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
@@ -19,6 +20,11 @@ const FIELD_TVA = 'c31b69d2-d7f8-4429-a919-9e1b038838c9';
 const FIELD_PHONE = 'ca118566-57e1-4a45-aaa9-da76a82d325f';
 const FIELD_LANGUE = 'de0514d3-59d3-4456-89dc-dd828f2cfa5e';
 const FIELD_SOURCE = 'ecd85646-a771-4d87-9942-858b4a0dbcf7';
+const FIELD_IBAN = '0e5c3a78-ba14-4c91-b640-ff078cf7059b';
+const FIELD_BANQUE = '8e3fe5e6-1339-4e37-b163-0037f400f373';
+const FIELD_LANGUE_CONTACT = '6cec93bb-a8fe-49b2-a083-a70b33007ab6';
+const FIELD_FORMULE = '96f97285-198c-4714-a9d9-3b63672f7f7b';
+const FIELD_PRIX = '28d12e23-1849-4f72-8a65-3e9062bbc055';
 
 const FORME_OPTIONS: Record<string, string> = {
   independant: 'b67670dd-0a6c-4cd6-b09f-9b1ecb76d05f',
@@ -37,6 +43,20 @@ const SOURCE_OPTIONS: Record<string, string> = {
   recommandation: '0c6bf933-1a04-46c9-a71c-ca5ee88b7698',
   'site-web': '2357e105-1454-4bb2-8ad0-608560231233',
   autre: '17f4d555-0695-4b93-bae5-157a56d4690f',
+};
+
+const LANGUE_CONTACT_OPTIONS: Record<string, string> = {
+  fr: 'fe67e096-b3c4-462c-9088-6a80268e1769',
+  nl: 'c9a12d53-1d4b-4bcf-aac1-4e1b98de3257',
+  en: 'f47f8368-8f0e-4afe-9fc2-0923625178b5',
+};
+
+const FORMULE_OPTIONS: Record<string, string> = {
+  Essentiel: 'd4e02f84-ada1-4095-bf7e-97d011746a7c',
+  Standard: '5151e43f-c86d-4add-9c41-997b916321d3',
+  Avance: '51700cb8-02d8-46a1-b36c-939f1ba83f15',
+  Premium: '86e29c33-a276-46af-9bb9-4d2c28cddd60',
+  'Sur mesure': '03df388d-39d7-4d14-bbe6-6b8d9ab113c3',
 };
 
 // 1:1 with the form's 12 needs (FIELD_SERVICES above) - ClickUp doesn't support
@@ -89,6 +109,9 @@ interface LeadPayload {
   leadSource?: string;
   language?: string;
   statutsFilePath?: string;
+  iban?: string;
+  bankName?: string;
+  contactLanguage?: string;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -111,6 +134,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
   const needs = body.needs ?? [];
+  const formula = matchFormula(body.structureType, body.invoiceVolume);
 
   const { data: lead, error: dbError } = await supabase
     .from('leads')
@@ -131,6 +155,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       lead_source: body.leadSource,
       language: body.language,
       statuts_file_path: body.statutsFilePath,
+      iban: body.iban,
+      bank_name: body.bankName,
+      contact_language: body.contactLanguage,
+      proposed_formula: formula?.name ?? null,
+      proposed_price: formula?.price ?? null,
     })
     .select()
     .single();
@@ -167,7 +196,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `Urgence : ${body.urgency || '-'}`,
         `Contact préféré : ${body.preferredContact || '-'}`,
         `Comment nous a connu : ${body.leadSource || '-'}`,
-        `Langue : ${body.language || '-'}`,
+        `Langue du site : ${body.language || '-'}`,
+        `Langue de contact souhaitée : ${body.contactLanguage || '-'}`,
+        `IBAN : ${body.iban || '-'}`,
+        `Banque : ${body.bankName || '-'}`,
+        `Formule proposée : ${formula ? `${formula.name}${formula.price ? ` (${formula.price} €/mois)` : ' (sur mesure)'}` : '-'}`,
         body.statutsFilePath ? `Document joint : ${body.statutsFilePath}` : '',
         '',
         'Message :',
@@ -203,19 +236,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (body.leadSource && SOURCE_OPTIONS[body.leadSource]) {
           customFields.push({ id: FIELD_SOURCE, value: SOURCE_OPTIONS[body.leadSource] });
         }
+        if (body.iban) customFields.push({ id: FIELD_IBAN, value: body.iban });
+        if (body.bankName) customFields.push({ id: FIELD_BANQUE, value: body.bankName });
+        if (body.contactLanguage && LANGUE_CONTACT_OPTIONS[body.contactLanguage]) {
+          customFields.push({ id: FIELD_LANGUE_CONTACT, value: LANGUE_CONTACT_OPTIONS[body.contactLanguage] });
+        }
+        if (formula && FORMULE_OPTIONS[formula.name]) {
+          customFields.push({ id: FIELD_FORMULE, value: FORMULE_OPTIONS[formula.name] });
+        }
+        if (formula?.price) customFields.push({ id: FIELD_PRIX, value: formula.price });
         const labelIds = Array.from(new Set(needs.map((k) => NEEDS_LABELS[k]).filter(Boolean)));
         if (labelIds.length) customFields.push({ id: FIELD_SERVICES, value: labelIds });
 
         // ClickUp has no bulk custom-field endpoint - set them one by one.
-        await Promise.all(
-          customFields.map(({ id, value }) =>
-            fetch(`https://api.clickup.com/api/v2/task/${taskId}/field/${id}`, {
-              method: 'POST',
-              headers: { Authorization: CLICKUP_TOKEN, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ value }),
-            })
-          )
+        const fieldWrites = customFields.map(({ id, value }) =>
+          fetch(`https://api.clickup.com/api/v2/task/${taskId}/field/${id}`, {
+            method: 'POST',
+            headers: { Authorization: CLICKUP_TOKEN, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value }),
+          })
         );
+
+        // Draft proposal email as a comment - Pascal reviews/adapts/sends it himself,
+        // nothing is ever emailed automatically to the prospect.
+        let commentWrite: Promise<unknown> = Promise.resolve();
+        if (formula) {
+          const email = buildProposalEmail(body.contactLanguage || body.language || 'fr', {
+            contactName: body.contactName,
+            companyName: body.companyName,
+            structureType: body.structureType,
+            phone: body.phone,
+            formula,
+          });
+          const commentText = [
+            '📧 Brouillon de proposition (à relire et adapter avant envoi) :',
+            '',
+            `Objet : ${email.subject}`,
+            '',
+            email.body,
+          ].join('\n');
+          commentWrite = fetch(`https://api.clickup.com/api/v2/task/${taskId}/comment`, {
+            method: 'POST',
+            headers: { Authorization: CLICKUP_TOKEN, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comment_text: commentText, notify_all: false }),
+          });
+        }
+
+        await Promise.all([...fieldWrites, commentWrite]);
 
         await supabase
           .from('leads')
