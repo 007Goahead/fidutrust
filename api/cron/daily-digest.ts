@@ -20,6 +20,8 @@ const PORTFOLIO_TEAMS: { id: string; label: string }[] = [
   { id: '90121923690', label: 'Dordogne' },
   { id: '90121923695', label: 'Capital & Investissement' },
   { id: '90121923699', label: 'FeelHarmonics' },
+  { id: '90121923756', label: 'E-Ride Escape' },
+  { id: '90121923757', label: 'GoAhead Agency' },
 ];
 const PORTFOLIO_DIGEST_TASK_ID = '869e9fdb5'; // "Alertes multi-portefeuille" in Pascal's private space
 
