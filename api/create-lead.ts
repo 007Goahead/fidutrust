@@ -7,10 +7,14 @@ const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN;
 const CLICKUP_LIST_ID = process.env.CLICKUP_LIST_ID_CRM_PROSPECTS || '901219609612';
 
+// Pascal Notermans' ClickUp user id - assigned to every new lead so ClickUp actually
+// notifies someone (unassigned tasks generate no notification/email at all).
+const PASCAL_ID = 222257946;
+
 // ClickUp custom field IDs on "01 - CRM & Onboarding > CRM - Prospects".
 // See memory/fidutrust_clickup_setup.md if these ever need to be re-derived.
 const FIELD_FORME = '01160224-123a-4ddc-ba4c-db234fa0759a';
-const FIELD_SERVICES = '756e8605-e6cd-4535-8985-ab8bbb69380f';
+const FIELD_SERVICES = 'd911915f-1c43-4dcb-9ac2-63501c50db41'; // "Services souhaites (complet)" - 12/12 options, see below
 const FIELD_TVA = 'c31b69d2-d7f8-4429-a919-9e1b038838c9';
 const FIELD_PHONE = 'ca118566-57e1-4a45-aaa9-da76a82d325f';
 const FIELD_LANGUE = 'de0514d3-59d3-4456-89dc-dd828f2cfa5e';
@@ -35,17 +39,22 @@ const SOURCE_OPTIONS: Record<string, string> = {
   autre: '17f4d555-0695-4b93-bae5-157a56d4690f',
 };
 
-// The ClickUp "Services souhaités" labels field only has 7 options (API doesn't support
-// editing/deleting fields after creation - PUT and DELETE both return 405). Best-effort
-// map onto the closest existing label; the full, exact list always goes in the task
-// description regardless, so nothing is ever lost - this only affects the quick-glance tag.
+// 1:1 with the form's 12 needs (FIELD_SERVICES above) - ClickUp doesn't support
+// editing/deleting a field after creation (PUT and DELETE both return 405), so the
+// original 7-option field was abandoned in favor of this complete one.
 const NEEDS_LABELS: Record<string, string> = {
-  comptabilite: '5c05d19f-abaa-49e5-8ce7-5329526d6de6', // Comptabilité
-  tva: 'b2310a19-4dc9-475e-8cbf-7b034ece2d39', // TVA
-  comptesAnnuels: 'a6cf3225-d9fa-4cb8-abfe-b4f01d59b648', // Bilan annuel
-  conseilFiscal: '6f1c2b86-dcee-4647-a373-32a09573d985', // Conseil
-  conseilSocial: 'cfc3bcbc-ba6f-48f4-bf23-f41ec4ff3a82', // Secrétariat social
-  conseilJuridique: '6f1c2b86-dcee-4647-a373-32a09573d985', // Conseil
+  comptabilite: 'ac777ad8-4a97-4e53-88f8-8fccf291476b',
+  tva: 'aadc43be-ec5a-4cdd-b7e4-331ff823345c',
+  comptesAnnuels: '1868a5de-9861-43a8-98b5-6df944e6ffa5',
+  isoc: 'c9e6084c-df32-4b8d-aadb-d5993e463ac5',
+  ipp: 'a23f08d1-3883-49ee-9ad8-da41d50e4d0c',
+  ubo: '29a4b6de-fa91-4958-ba02-63ac136113ce',
+  peppol: 'f6719979-23b1-4c22-8a3e-1cd3bc3cfa9c',
+  conseilFiscal: 'b68bb926-6d72-4351-a956-002764ce55a1',
+  conseilSocial: '5740e37d-ae24-42e6-becb-8166c6bf0bc0',
+  conseilJuridique: 'ba669035-e404-47f3-9585-9a7ed0c6a3f1',
+  planFinancier: 'e4aaaf84-36cd-4e13-8666-c8a647266e75',
+  tresorerie: '00416d69-d66d-45d1-bd6e-2155e4e3b437',
 };
 
 const NEEDS_TEXT: Record<string, string> = {
@@ -173,6 +182,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         body: JSON.stringify({
           name: `${body.companyName || body.contactName} — nouveau lead site web`,
           description,
+          assignees: [PASCAL_ID],
         }),
       });
       const created = await createResp.json();
