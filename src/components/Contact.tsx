@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, Check, Send, MapPin, Clock } from 'lucide-react';
+import { Mail, Check, Send, MapPin, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 const Contact = () => {
@@ -12,24 +12,39 @@ const Contact = () => {
     message: ''
   });
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const typeLabel = formData.type === 'societe' ? t('contact.company') : t('contact.freelancer');
-    const subject = encodeURIComponent(`${language === 'fr' ? 'Demande de devis' : language === 'en' ? 'Quote request' : 'Offerteaanvraag'} - ${typeLabel}`);
-    const body = encodeURIComponent(
-      `${t('contact.fullName')}: ${formData.name}\n` +
-      `${t('common.email')}: ${formData.email}\n` +
-      `${t('contact.clientType')}: ${typeLabel}\n` +
-      `${t('contact.desiredFormula')}: ${formData.formula || (language === 'fr' ? 'Non spécifiée' : language === 'en' ? 'Not specified' : 'Niet gespecificeerd')}\n\n` +
-      `${t('contact.message')}:\n${formData.message}`
-    );
-    
-    window.location.href = `mailto:Info@fidutrust.eu?subject=${subject}&body=${body}`;
-    
-    setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 5000);
+    setSubmitError(null);
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch('/api/create-lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceForm: 'contact',
+          contactName: formData.name,
+          email: formData.email,
+          structureType: formData.type,
+          message: `${t('contact.desiredFormula')}: ${formData.formula || '-'}\n\n${formData.message}`,
+          language,
+        }),
+      });
+
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+      setSubmitted(true);
+      setFormData({ name: '', email: '', type: 'societe', formula: '', message: '' });
+      setTimeout(() => setSubmitted(false), 8000);
+    } catch (err) {
+      console.error('Contact form submission failed', err);
+      setSubmitError(t('devis.submitError'));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -163,18 +178,26 @@ const Contact = () => {
                 ></textarea>
               </div>
               
-              <button 
+              <button
                 type="submit"
-                className="w-full bg-[#C6A664] text-white py-4 rounded-lg font-semibold hover:bg-[#B89654] transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2 shadow-lg"
+                disabled={isSubmitting}
+                className="w-full bg-[#C6A664] text-white py-4 rounded-lg font-semibold hover:bg-[#B89654] transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2 shadow-lg disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
               >
-                <Send className="w-5 h-5" />
+                {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                 {t('contact.sendRequest')}
               </button>
-              
+
               {submitted && (
                 <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-lg flex items-center justify-center gap-2">
                   <Check className="w-5 h-5" />
                   {t('contact.emailOpened')}
+                </div>
+              )}
+
+              {submitError && (
+                <div className="mt-4 p-4 bg-red-100 text-red-800 rounded-lg flex items-center justify-center gap-2">
+                  <AlertCircle className="w-5 h-5" />
+                  {submitError}
                 </div>
               )}
 

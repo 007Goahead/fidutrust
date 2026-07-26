@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { Send, Check, FileText, Building2, User, Calculator, Briefcase, Scale, PiggyBank, FileCheck, Users, CreditCard } from 'lucide-react';
+import { Send, Check, FileText, Building2, User, Calculator, Briefcase, Scale, PiggyBank, FileCheck, Users, CreditCard, Upload, AlertCircle, Loader2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { supabase } from '@/integrations/supabase/client';
 
 const DemandeDevis = () => {
   const { t, language } = useLanguage();
-  
+
   const [formData, setFormData] = useState({
     companyName: '',
     contactName: '',
     email: '',
     phone: '',
+    vatNumber: '',
     structureType: '',
     invoiceVolume: '',
     needs: {
@@ -30,10 +32,15 @@ const DemandeDevis = () => {
     message: '',
     preferredContact: 'email',
     urgency: 'normal',
+    leadSource: '',
   });
-  
+
   const [submitted, setSubmitted] = useState(false);
   const [activeStep, setActiveStep] = useState(1);
+  const [statutsFile, setStatutsFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitStage, setSubmitStage] = useState<'idle' | 'uploading' | 'sending'>('idle');
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -80,65 +87,64 @@ const DemandeDevis = () => {
       .join(', ');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const structureLabel = formData.structureType === 'societe' ? t('devis.companyType') : t('devis.freelancerType');
-    const volumeLabels: Record<string, string> = {
-      '120': `≤ 120 ${t('devis.invoicesYear')}`,
-      '250': `≤ 250 ${t('devis.invoicesYear')}`,
-      '375': `≤ 375 ${t('devis.invoicesYear')}`,
-      '500': `≤ 500 ${t('devis.invoicesYear')}`,
-      'plus500': `> 500 ${t('devis.invoicesYear')} (${t('devis.customActivity')})`,
-    };
-    const urgencyLabels: Record<string, string> = {
-      'urgent': t('devis.urgent'),
-      'normal': t('devis.normal'),
-      'flexible': t('devis.flexible'),
-    };
-    
-    const subjectText = language === 'fr' ? 'Demande de devis personnalisé' : language === 'en' ? 'Personalized quote request' : 'Gepersonaliseerde offerteaanvraag';
-    const subject = encodeURIComponent(`${subjectText} - ${structureLabel} - ${formData.companyName || formData.contactName}`);
-    
-    const notSpecified = language === 'fr' ? 'Non spécifié' : language === 'en' ? 'Not specified' : 'Niet gespecificeerd';
-    const noMessage = language === 'fr' ? 'Aucun message' : language === 'en' ? 'No message' : 'Geen bericht';
-    const noNeedsSelected = language === 'fr' ? 'Aucun besoin spécifique sélectionné' : language === 'en' ? 'No specific needs selected' : 'Geen specifieke behoeften geselecteerd';
-    
-    const body = encodeURIComponent(
-      `=== ${subjectText.toUpperCase()} ===\n\n` +
-      `--- ${t('devis.step4Title').toUpperCase()} ---\n` +
-      `${t('devis.companyName')}: ${formData.companyName || notSpecified}\n` +
-      `${t('devis.contactName')}: ${formData.contactName}\n` +
-      `${t('common.email')}: ${formData.email}\n` +
-      `${t('devis.phone')}: ${formData.phone || notSpecified}\n` +
-      `${t('devis.preferredContact')}: ${formData.preferredContact === 'email' ? t('devis.byEmail') : t('devis.byPhone')}\n\n` +
-      `--- ${t('devis.step1Title').toUpperCase()} ---\n` +
-      `${structureLabel}\n\n` +
-      `--- ${t('devis.step2Title').toUpperCase()} ---\n` +
-      `${volumeLabels[formData.invoiceVolume] || notSpecified}\n\n` +
-      `--- ${t('devis.step3Title').toUpperCase()} ---\n` +
-      `${getSelectedNeeds() || noNeedsSelected}\n\n` +
-      `--- ${t('devis.currentSituation').toUpperCase()} ---\n` +
-      `${formData.currentSituation || notSpecified}\n\n` +
-      `--- ${t('devis.urgency').toUpperCase()} ---\n` +
-      `${urgencyLabels[formData.urgency]}\n\n` +
-      `--- ${t('devis.additionalMessage').toUpperCase()} ---\n` +
-      `${formData.message || noMessage}\n\n` +
-      `---\n` +
-      `${language === 'fr' ? 'Demande envoyée via le site FIDUTRUST' : language === 'en' ? 'Request sent via FIDUTRUST website' : 'Aanvraag verzonden via FIDUTRUST website'}`
-    );
-    
-    window.location.href = `mailto:Info@fidutrust.eu?subject=${subject}&body=${body}`;
-    
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
+    setSubmitError(null);
+    setIsSubmitting(true);
+
+    try {
+      let statutsFilePath: string | undefined;
+
+      if (statutsFile) {
+        setSubmitStage('uploading');
+        const safeName = statutsFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+        const path = `${crypto.randomUUID()}-${safeName}`;
+        const { error: uploadError } = await supabase.storage
+          .from('lead-documents')
+          .upload(path, statutsFile);
+        if (uploadError) throw uploadError;
+        statutsFilePath = path;
+      }
+
+      setSubmitStage('sending');
+      const needsSelected = Object.entries(formData.needs)
+        .filter(([, selected]) => selected)
+        .map(([key]) => key);
+
+      const response = await fetch('/api/create-lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceForm: 'devis',
+          companyName: formData.companyName,
+          contactName: formData.contactName,
+          email: formData.email,
+          phone: formData.phone,
+          vatNumber: formData.vatNumber,
+          structureType: formData.structureType,
+          invoiceVolume: formData.invoiceVolume,
+          needs: needsSelected,
+          currentSituation: formData.currentSituation,
+          message: formData.message,
+          preferredContact: formData.preferredContact,
+          urgency: formData.urgency,
+          leadSource: formData.leadSource,
+          language,
+          statutsFilePath,
+        }),
+      });
+
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+      setSubmitted(true);
       setActiveStep(1);
+      setStatutsFile(null);
       setFormData({
         companyName: '',
         contactName: '',
         email: '',
         phone: '',
+        vatNumber: '',
         structureType: '',
         invoiceVolume: '',
         needs: {
@@ -159,8 +165,16 @@ const DemandeDevis = () => {
         message: '',
         preferredContact: 'email',
         urgency: 'normal',
+        leadSource: '',
       });
-    }, 5000);
+      setTimeout(() => setSubmitted(false), 8000);
+    } catch (err) {
+      console.error('Quote request submission failed', err);
+      setSubmitError(t('devis.submitError'));
+    } finally {
+      setIsSubmitting(false);
+      setSubmitStage('idle');
+    }
   };
 
   const canProceedStep1 = formData.structureType !== '';
@@ -467,6 +481,41 @@ const DemandeDevis = () => {
               <div className="grid md:grid-cols-2 gap-6 mb-6">
                 <div>
                   <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
+                    {t('devis.vatNumber')}
+                  </label>
+                  <input
+                    type="text"
+                    name="vatNumber"
+                    value={formData.vatNumber}
+                    onChange={handleInputChange}
+                    placeholder="BE 0123.456.789"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:border-[#C6A664] focus:ring-2 focus:ring-[#C6A664]/20 outline-none transition-all"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">{t('devis.vatNumberHint')}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
+                    {t('devis.leadSource')}
+                  </label>
+                  <select
+                    name="leadSource"
+                    value={formData.leadSource}
+                    onChange={handleInputChange}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:border-[#C6A664] focus:ring-2 focus:ring-[#C6A664]/20 outline-none transition-all"
+                  >
+                    <option value="">{t('devis.selectLeadSource')}</option>
+                    <option value="bouche-a-oreille">{t('devis.sourceWordOfMouth')}</option>
+                    <option value="google">{t('devis.sourceGoogle')}</option>
+                    <option value="recommandation">{t('devis.sourceRecommendation')}</option>
+                    <option value="site-web">{t('devis.sourceWebsite')}</option>
+                    <option value="autre">{t('devis.sourceOther')}</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
                     {t('devis.preferredContact')}
                   </label>
                   <select
@@ -515,7 +564,7 @@ const DemandeDevis = () => {
                 </select>
               </div>
 
-              <div className="mb-8">
+              <div className="mb-6">
                 <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
                   {t('devis.additionalMessage')}
                 </label>
@@ -527,6 +576,24 @@ const DemandeDevis = () => {
                   placeholder={t('devis.additionalMessagePlaceholder')}
                   className="w-full p-3 border border-gray-300 rounded-lg focus:border-[#C6A664] focus:ring-2 focus:ring-[#C6A664]/20 outline-none transition-all resize-none"
                 />
+              </div>
+
+              <div className="mb-8">
+                <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
+                  {t('devis.uploadStatuts')}
+                </label>
+                <label className="flex items-center gap-3 w-full p-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-[#C6A664]/50 hover:bg-gray-50 transition-all">
+                  <Upload className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                  <span className="text-sm text-gray-600 truncate">
+                    {statutsFile ? statutsFile.name : t('devis.uploadStatutsHint')}
+                  </span>
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={(e) => setStatutsFile(e.target.files?.[0] ?? null)}
+                  />
+                </label>
               </div>
 
               {/* Summary */}
@@ -564,15 +631,24 @@ const DemandeDevis = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={!canSubmit}
+                  disabled={!canSubmit || isSubmitting}
                   className={`px-8 py-4 rounded-lg font-semibold flex items-center gap-2 transition-all ${
-                    canSubmit
+                    canSubmit && !isSubmitting
                       ? 'bg-[#C6A664] text-white hover:bg-[#B89654] shadow-lg hover:shadow-xl'
                       : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                   }`}
                 >
-                  <Send className="w-5 h-5" />
-                  {t('devis.sendQuoteRequest')}
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      {submitStage === 'uploading' ? t('devis.uploading') : t('devis.sending')}
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-5 h-5" />
+                      {t('devis.sendQuoteRequest')}
+                    </>
+                  )}
                 </button>
               </div>
 
@@ -580,6 +656,13 @@ const DemandeDevis = () => {
                 <div className="mt-6 p-4 bg-green-100 text-green-800 rounded-lg flex items-center justify-center gap-2">
                   <Check className="w-5 h-5" />
                   {t('devis.emailOpened')}
+                </div>
+              )}
+
+              {submitError && (
+                <div className="mt-6 p-4 bg-red-100 text-red-800 rounded-lg flex items-center justify-center gap-2">
+                  <AlertCircle className="w-5 h-5" />
+                  {submitError}
                 </div>
               )}
 
