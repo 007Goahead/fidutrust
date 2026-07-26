@@ -6,6 +6,7 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CLICKUP_TOKEN = process.env.CLICKUP_API_TOKEN;
 const CLICKUP_LIST_ID = process.env.CLICKUP_LIST_ID_CRM_PROSPECTS || '901219609612';
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
 // Pascal Notermans' ClickUp user id - assigned to every new lead so ClickUp actually
 // notifies someone (unassigned tasks generate no notification/email at all).
@@ -303,6 +304,128 @@ function buildProposalEmail(lang: string, inputs: EmailInputs): { subject: strin
   };
 }
 
+// AI refinement layer: reads the prospect's free-text message and (if provided)
+// their uploaded document to sanity-check the mechanical volume-based formula
+// match and personalize the proposal email. Best-effort and fully optional -
+// if ANTHROPIC_API_KEY is missing or the call fails for any reason, the caller
+// falls back to the deterministic buildProposalEmail() output. Never throws.
+interface AIAnalysis {
+  analysisSummary: string;
+  emailSubject: string;
+  emailBody: string;
+  formulaOverride: string | null;
+  overrideReasoning: string;
+}
+
+async function getAIAnalysis(params: {
+  contactName: string;
+  companyName?: string;
+  structureType?: string;
+  invoiceVolume?: string;
+  message?: string;
+  baselineFormula: FormulaMatch;
+  targetLang: string;
+  documentBase64?: string;
+}): Promise<AIAnalysis | null> {
+  if (!ANTHROPIC_KEY) return null;
+  if (!params.message && !params.documentBase64) return null; // nothing extra to analyze
+
+  try {
+    const langLabel = params.targetLang === 'nl' ? 'Dutch' : params.targetLang === 'en' ? 'English' : 'French';
+    const promptText = [
+      "You are assisting Pascal Notermans, operational director of FIDUTRUST SRL, a Belgian accounting firm (fiduciaire), in qualifying a new lead from the website's quote-request form.",
+      '',
+      `Prospect: ${params.contactName}${params.companyName ? ` (${params.companyName})` : ''}`,
+      `Structure type: ${params.structureType || 'unknown'}`,
+      `Declared invoice volume bracket: ${params.invoiceVolume || 'unknown'}`,
+      `Mechanical volume-based formula match: ${params.baselineFormula.name}${params.baselineFormula.price ? ` at ${params.baselineFormula.price} EUR/month excl. VAT` : ' (tailor-made quote, no fixed price)'}.`,
+      '',
+      "Prospect's message:",
+      params.message || '(no message provided)',
+      '',
+      params.documentBase64 ? 'A document (likely the company Articles of Association) is attached - read it for relevant details (company purpose, share capital, incorporation date, directors, etc.).' : '',
+      '',
+      'Task:',
+      '1. Decide whether the message and/or document change the picture enough to warrant a different formula than the mechanical match above (e.g. the prospect explicitly states a very different volume, an unusually complex structure, multiple entities, urgency, or something the invoice-count bracket alone would not capture). Only override if there is a clear, specific reason - do not override on vague impressions.',
+      '2. Write a short internal analysis (2-4 sentences, in French, for Pascal only - never shown to the prospect) noting anything noteworthy: red flags, opportunities, special requirements, inconsistencies between the message and the declared volume.',
+      `3. Write the full proposal email in ${langLabel}, addressed to the prospect. Follow this exact structure and professional-but-warm tone (this is Pascal's own template, adapt the wording naturally to weave in any relevant specifics from the message, but keep the structure and sign-off intact):`,
+      '',
+      '"""',
+      `Bonjour {firstName},\n\nJe vous remercie pour les informations et documents que vous nous avez transmis concernant {company}.\n\nAprès analyse de votre activité et du volume annoncé, nous pensons que notre offre {formula} à {price} € HTVA par mois correspond parfaitement à vos besoins actuels.\n\nCette formule comprend les prestations décrites sur notre site internet et est adaptée à une structure présentant notamment :\n\n* un volume d'environ {range} factures par mois ;\n* un dirigeant ;\n* une activité commerciale classique ;\n* les obligations comptables et déclaratives courantes.\n\nCette proposition est bien entendu basée sur les informations communiquées à ce jour. Si votre activité évolue ou si vos besoins venaient à changer, nous réévaluerons ensemble la formule la plus adaptée.\n\nJe vous propose de fixer un rendez-vous téléphonique ou en visioconférence (WhatsApp) afin de vous présenter notre mode de fonctionnement, répondre à vos questions et, si vous le souhaitez, démarrer rapidement notre collaboration.\n\nN'hésitez pas à me communiquer vos disponibilités.\n\nJe vous remercie pour votre confiance et reste à votre entière disposition.\n\nBien cordialement,\n\nPascal NOTERMANS\nDirecteur opérationnel\nFIDUTRUST SRL\n+32 477 508 232\npascal@fidutrust.eu\nwww.fidutrust.eu`,
+      '"""',
+      '',
+      `Translate/adapt naturally into ${langLabel} if it isn't French - do not do a literal word-for-word translation, write as a native professional speaker would. Use the OVERRIDDEN formula/price if you decided to override in step 1, otherwise use the mechanical match given above.`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const content: Array<Record<string, unknown>> = [];
+    if (params.documentBase64) {
+      content.push({
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: params.documentBase64 },
+      });
+    }
+    content.push({ type: 'text', text: promptText });
+
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5',
+        max_tokens: 2000,
+        tools: [
+          {
+            name: 'submit_lead_analysis',
+            description: 'Submit the internal analysis and the drafted proposal email for this lead.',
+            input_schema: {
+              type: 'object',
+              properties: {
+                formula_override: {
+                  type: ['string', 'null'],
+                  enum: ['Essentiel', 'Standard', 'Avance', 'Premium', 'Sur mesure', null],
+                  description: 'Different formula than the mechanical match, only if clearly warranted. Otherwise null.',
+                },
+                override_reasoning: { type: 'string', description: 'One sentence why, in French. Empty string if no override.' },
+                analysis_summary: { type: 'string', description: '2-4 sentence internal note for Pascal, in French.' },
+                email_subject: { type: 'string' },
+                email_body: { type: 'string', description: 'Full email body in the target language, matching the template structure.' },
+              },
+              required: ['analysis_summary', 'email_subject', 'email_body'],
+            },
+          },
+        ],
+        tool_choice: { type: 'tool', name: 'submit_lead_analysis' },
+        messages: [{ role: 'user', content }],
+      }),
+    });
+
+    if (!resp.ok) {
+      console.error('Anthropic API error', resp.status, await resp.text());
+      return null;
+    }
+    const data = await resp.json();
+    const toolUse = (data.content as Array<Record<string, unknown>> | undefined)?.find((b) => b.type === 'tool_use');
+    if (!toolUse || !toolUse.input) return null;
+    const input = toolUse.input as Record<string, unknown>;
+
+    return {
+      analysisSummary: String(input.analysis_summary || ''),
+      emailSubject: String(input.email_subject || ''),
+      emailBody: String(input.email_body || ''),
+      formulaOverride: (input.formula_override as string | null) || null,
+      overrideReasoning: String(input.override_reasoning || ''),
+    };
+  } catch (err) {
+    console.error('AI analysis failed', err);
+    return null;
+  }
+}
+
 interface LeadPayload {
   sourceForm?: 'devis' | 'contact';
   companyName?: string;
@@ -380,6 +503,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  // Optional AI refinement: reads the free-text message + uploaded document (if any)
+  // to sanity-check the mechanical formula match and personalize the email. Never
+  // blocks or fails the lead - falls back to the deterministic email below.
+  let aiAnalysis: AIAnalysis | null = null;
+  if (ANTHROPIC_KEY && formula) {
+    let documentBase64: string | undefined;
+    if (body.statutsFilePath) {
+      try {
+        const { data: fileData } = await supabase.storage.from('lead-documents').download(body.statutsFilePath);
+        if (fileData) {
+          const buf = Buffer.from(await fileData.arrayBuffer());
+          documentBase64 = buf.toString('base64');
+        }
+      } catch (err) {
+        console.error('Could not download statuts file for AI analysis', err);
+      }
+    }
+    aiAnalysis = await getAIAnalysis({
+      contactName: body.contactName,
+      companyName: body.companyName,
+      structureType: body.structureType,
+      invoiceVolume: body.invoiceVolume,
+      message: body.message,
+      baselineFormula: formula,
+      targetLang: body.contactLanguage || body.language || 'fr',
+      documentBase64,
+    });
+    if (aiAnalysis) {
+      await supabase.from('leads').update({ ai_analysis: aiAnalysis.analysisSummary }).eq('id', lead.id);
+    }
+  }
+
   // ClickUp sync is best-effort: the lead is already safely stored in Supabase,
   // so a ClickUp hiccup must never fail the visitor's submission.
   let clickupTaskUrl: string | null = null;
@@ -452,10 +607,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (body.contactLanguage && LANGUE_CONTACT_OPTIONS[body.contactLanguage]) {
           customFields.push({ id: FIELD_LANGUE_CONTACT, value: LANGUE_CONTACT_OPTIONS[body.contactLanguage] });
         }
-        if (formula && FORMULE_OPTIONS[formula.name]) {
-          customFields.push({ id: FIELD_FORMULE, value: FORMULE_OPTIONS[formula.name] });
+        const finalFormulaName = aiAnalysis?.formulaOverride || formula?.name;
+        if (finalFormulaName && FORMULE_OPTIONS[finalFormulaName]) {
+          customFields.push({ id: FIELD_FORMULE, value: FORMULE_OPTIONS[finalFormulaName] });
         }
-        if (formula?.price) customFields.push({ id: FIELD_PRIX, value: formula.price });
+        const finalPrice = aiAnalysis?.formulaOverride
+          ? TIERS.societe.concat(TIERS.independant).find((t) => t.name === aiAnalysis.formulaOverride)?.price
+          : formula?.price;
+        if (finalPrice) customFields.push({ id: FIELD_PRIX, value: finalPrice });
         const labelIds = Array.from(new Set(needs.map((k) => NEEDS_LABELS[k]).filter(Boolean)));
         if (labelIds.length) customFields.push({ id: FIELD_SERVICES, value: labelIds });
 
@@ -469,9 +628,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         );
 
         // Draft proposal email as a comment - Pascal reviews/adapts/sends it himself,
-        // nothing is ever emailed automatically to the prospect.
+        // nothing is ever emailed automatically to the prospect. Prefer the AI-refined
+        // version (personalized from the message/document) when available, otherwise
+        // fall back to the deterministic template.
         let commentWrite: Promise<unknown> = Promise.resolve();
-        if (formula) {
+        if (aiAnalysis) {
+          const commentLines = [
+            '🤖 Analyse IA (message + document) :',
+            aiAnalysis.analysisSummary,
+          ];
+          if (aiAnalysis.formulaOverride && aiAnalysis.formulaOverride !== formula?.name) {
+            commentLines.push(
+              '',
+              `⚠️ Formule ajustée par rapport au volume déclaré : ${aiAnalysis.formulaOverride}. Raison : ${aiAnalysis.overrideReasoning}`
+            );
+          }
+          commentLines.push(
+            '',
+            '📧 Brouillon de proposition (à relire et adapter avant envoi) :',
+            '',
+            `Objet : ${aiAnalysis.emailSubject}`,
+            '',
+            aiAnalysis.emailBody
+          );
+          commentWrite = fetch(`https://api.clickup.com/api/v2/task/${taskId}/comment`, {
+            method: 'POST',
+            headers: { Authorization: CLICKUP_TOKEN, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ comment_text: commentLines.join('\n'), notify_all: false }),
+          });
+        } else if (formula) {
           const email = buildProposalEmail(body.contactLanguage || body.language || 'fr', {
             contactName: body.contactName,
             companyName: body.companyName,
