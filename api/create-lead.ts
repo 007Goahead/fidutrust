@@ -325,10 +325,11 @@ async function getAIAnalysis(params: {
   message?: string;
   baselineFormula: FormulaMatch;
   targetLang: string;
-  documentBase64?: string;
+  documentBlocks?: Array<Record<string, unknown>>;
 }): Promise<AIAnalysis | null> {
   if (!ANTHROPIC_KEY) return null;
-  if (!params.message && !params.documentBase64) return null; // nothing extra to analyze
+  const hasDocs = params.documentBlocks && params.documentBlocks.length > 0;
+  if (!params.message && !hasDocs) return null; // nothing extra to analyze
 
   try {
     const langLabel = params.targetLang === 'nl' ? 'Dutch' : params.targetLang === 'en' ? 'English' : 'French';
@@ -343,7 +344,7 @@ async function getAIAnalysis(params: {
       "Prospect's message:",
       params.message || '(no message provided)',
       '',
-      params.documentBase64 ? 'A document (likely the company Articles of Association) is attached - read it for relevant details (company purpose, share capital, incorporation date, directors, etc.).' : '',
+      hasDocs ? `${params.documentBlocks!.length} document(s) attached (likely Articles of Association, ID, or similar) - read them for relevant details (company purpose, share capital, incorporation date, directors, etc.).` : '',
       '',
       'Task:',
       '1. Decide whether the message and/or document change the picture enough to warrant a different formula than the mechanical match above (e.g. the prospect explicitly states a very different volume, an unusually complex structure, multiple entities, urgency, or something the invoice-count bracket alone would not capture). Only override if there is a clear, specific reason - do not override on vague impressions.',
@@ -359,14 +360,7 @@ async function getAIAnalysis(params: {
       .filter(Boolean)
       .join('\n');
 
-    const content: Array<Record<string, unknown>> = [];
-    if (params.documentBase64) {
-      content.push({
-        type: 'document',
-        source: { type: 'base64', media_type: 'application/pdf', data: params.documentBase64 },
-      });
-    }
-    content.push({ type: 'text', text: promptText });
+    const content: Array<Record<string, unknown>> = [...(params.documentBlocks ?? []), { type: 'text', text: promptText }];
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -442,7 +436,7 @@ interface LeadPayload {
   urgency?: string;
   leadSource?: string;
   language?: string;
-  statutsFilePath?: string;
+  documentPaths?: string[];
   iban?: string;
   bankName?: string;
   contactLanguage?: string;
@@ -488,7 +482,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       urgency: body.urgency,
       lead_source: body.leadSource,
       language: body.language,
-      statuts_file_path: body.statutsFilePath,
+      document_paths: body.documentPaths ?? null,
       iban: body.iban,
       bank_name: body.bankName,
       contact_language: body.contactLanguage,
@@ -508,16 +502,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // blocks or fails the lead - falls back to the deterministic email below.
   let aiAnalysis: AIAnalysis | null = null;
   if (ANTHROPIC_KEY && formula) {
-    let documentBase64: string | undefined;
-    if (body.statutsFilePath) {
+    const documentBlocks: Array<Record<string, unknown>> = [];
+    for (const path of body.documentPaths ?? []) {
       try {
-        const { data: fileData } = await supabase.storage.from('lead-documents').download(body.statutsFilePath);
-        if (fileData) {
-          const buf = Buffer.from(await fileData.arrayBuffer());
-          documentBase64 = buf.toString('base64');
-        }
+        const { data: fileData } = await supabase.storage.from('lead-documents').download(path);
+        if (!fileData) continue;
+        const ext = path.split('.').pop()?.toLowerCase();
+        const mediaType = ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : null;
+        if (!mediaType) continue; // .doc/.docx etc. aren't readable by the API - skipped, still listed for Pascal below
+        const buf = Buffer.from(await fileData.arrayBuffer());
+        const base64 = buf.toString('base64');
+        documentBlocks.push(
+          mediaType === 'application/pdf'
+            ? { type: 'document', source: { type: 'base64', media_type: mediaType, data: base64 } }
+            : { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }
+        );
       } catch (err) {
-        console.error('Could not download statuts file for AI analysis', err);
+        console.error('Could not download document for AI analysis', path, err);
       }
     }
     aiAnalysis = await getAIAnalysis({
@@ -528,7 +529,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       message: body.message,
       baselineFormula: formula,
       targetLang: body.contactLanguage || body.language || 'fr',
-      documentBase64,
+      documentBlocks,
     });
     if (aiAnalysis) {
       await supabase.from('leads').update({ ai_analysis: aiAnalysis.analysisSummary }).eq('id', lead.id);
@@ -567,7 +568,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `IBAN : ${body.iban || '-'}`,
         `Banque : ${body.bankName || '-'}`,
         `Formule proposée : ${formula ? `${formula.name}${formula.price ? ` (${formula.price} €/mois)` : ' (sur mesure)'}` : '-'}`,
-        body.statutsFilePath ? `Document joint : ${body.statutsFilePath}` : '',
+        body.documentPaths?.length ? `Documents joints (${body.documentPaths.length}) : ${body.documentPaths.join(', ')}` : '',
         '',
         'Message :',
         body.message || '(aucun)',

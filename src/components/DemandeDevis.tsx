@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Send, Check, FileText, Building2, User, Calculator, Briefcase, Scale, PiggyBank, FileCheck, Users, CreditCard, Upload, AlertCircle, Loader2 } from 'lucide-react';
+import { Send, Check, FileText, Building2, User, Calculator, Briefcase, Scale, PiggyBank, FileCheck, Users, CreditCard, Upload, AlertCircle, Loader2, X } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -40,10 +40,29 @@ const DemandeDevis = () => {
 
   const [submitted, setSubmitted] = useState(false);
   const [activeStep, setActiveStep] = useState(1);
-  const [statutsFile, setStatutsFile] = useState<File | null>(null);
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitStage, setSubmitStage] = useState<'idle' | 'uploading' | 'sending'>('idle');
+
+  const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB per file
+  const MAX_FILES = 5;
+
+  const handleFilesSelected = (fileList: FileList | null) => {
+    if (!fileList) return;
+    const incoming = Array.from(fileList);
+    const oversized = incoming.find((f) => f.size > MAX_FILE_SIZE);
+    if (oversized) {
+      setSubmitError(`"${oversized.name}" dépasse 15 Mo — merci de réduire sa taille ou de l'envoyer séparément par email.`);
+      return;
+    }
+    setSubmitError(null);
+    setDocumentFiles((prev) => [...prev, ...incoming].slice(0, MAX_FILES));
+  };
+
+  const removeDocumentFile = (index: number) => {
+    setDocumentFiles((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -96,17 +115,20 @@ const DemandeDevis = () => {
     setIsSubmitting(true);
 
     try {
-      let statutsFilePath: string | undefined;
+      const documentPaths: string[] = [];
 
-      if (statutsFile) {
+      if (documentFiles.length > 0) {
         setSubmitStage('uploading');
-        const safeName = statutsFile.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-        const path = `${crypto.randomUUID()}-${safeName}`;
-        const { error: uploadError } = await supabase.storage
-          .from('lead-documents')
-          .upload(path, statutsFile);
-        if (uploadError) throw uploadError;
-        statutsFilePath = path;
+        for (const file of documentFiles) {
+          const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+          const path = `${crypto.randomUUID()}-${safeName}`;
+          const { error: uploadError } = await supabase.storage.from('lead-documents').upload(path, file);
+          if (uploadError) {
+            console.error('Upload failed for', file.name, uploadError);
+            throw new Error(`Échec de l'envoi de "${file.name}" : ${uploadError.message}`);
+          }
+          documentPaths.push(path);
+        }
       }
 
       setSubmitStage('sending');
@@ -136,7 +158,7 @@ const DemandeDevis = () => {
           bankName: formData.bankName,
           contactLanguage: formData.contactLanguage,
           language,
-          statutsFilePath,
+          documentPaths,
         }),
       });
 
@@ -144,7 +166,7 @@ const DemandeDevis = () => {
 
       setSubmitted(true);
       setActiveStep(1);
-      setStatutsFile(null);
+      setDocumentFiles([]);
       setFormData({
         companyName: '',
         contactName: '',
@@ -179,7 +201,8 @@ const DemandeDevis = () => {
       setTimeout(() => setSubmitted(false), 8000);
     } catch (err) {
       console.error('Quote request submission failed', err);
-      setSubmitError(t('devis.submitError'));
+      const detail = err instanceof Error && err.message.startsWith("Échec de l'envoi") ? err.message : t('devis.submitError');
+      setSubmitError(detail);
     } finally {
       setIsSubmitting(false);
       setSubmitStage('idle');
@@ -641,18 +664,45 @@ const DemandeDevis = () => {
                 <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
                   {t('devis.uploadStatuts')}
                 </label>
-                <label className="flex items-center gap-3 w-full p-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-[#C6A664]/50 hover:bg-gray-50 transition-all">
-                  <Upload className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                  <span className="text-sm text-gray-600 truncate">
-                    {statutsFile ? statutsFile.name : t('devis.uploadStatutsHint')}
-                  </span>
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    className="hidden"
-                    onChange={(e) => setStatutsFile(e.target.files?.[0] ?? null)}
-                  />
-                </label>
+
+                {documentFiles.length > 0 && (
+                  <ul className="mb-3 space-y-2">
+                    {documentFiles.map((file, index) => (
+                      <li
+                        key={`${file.name}-${index}`}
+                        className="flex items-center gap-3 p-2 pl-3 bg-gray-50 border border-gray-200 rounded-lg"
+                      >
+                        <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <span className="text-sm text-gray-700 truncate flex-1">{file.name}</span>
+                        <span className="text-xs text-gray-400 flex-shrink-0">{(file.size / 1024 / 1024).toFixed(1)} Mo</span>
+                        <button
+                          type="button"
+                          onClick={() => removeDocumentFile(index)}
+                          className="p-1 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {documentFiles.length < MAX_FILES && (
+                  <label className="flex items-center gap-3 w-full p-3 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-[#C6A664]/50 hover:bg-gray-50 transition-all">
+                    <Upload className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                    <span className="text-sm text-gray-600 truncate">{t('devis.uploadStatutsHint')}</span>
+                    <input
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png,.doc,.docx"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        handleFilesSelected(e.target.files);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                )}
               </div>
 
               {/* Summary */}
