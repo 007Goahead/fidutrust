@@ -12,6 +12,7 @@ const Contact = () => {
     message: ''
   });
   const [submitted, setSubmitted] = useState(false);
+  const [submittedName, setSubmittedName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -36,6 +37,7 @@ const Contact = () => {
 
       if (!response.ok) throw new Error(`API error: ${response.status}`);
 
+      setSubmittedName(formData.name.trim().split(/\s+/)[0] || '');
       setSubmitted(true);
       setFormData({ name: '', email: '', type: 'societe', formula: '', message: '' });
       setTimeout(() => setSubmitted(false), 8000);
@@ -190,7 +192,7 @@ const Contact = () => {
               {submitted && (
                 <div className="mt-4 p-4 bg-green-100 text-green-800 rounded-lg flex items-center justify-center gap-2">
                   <Check className="w-5 h-5" />
-                  {t('contact.emailOpened')}
+                  {t('contact.emailOpened').replace('{name}', submittedName)}
                 </div>
               )}
 

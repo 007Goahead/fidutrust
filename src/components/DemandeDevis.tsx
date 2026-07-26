@@ -61,6 +61,7 @@ const DemandeDevis = () => {
   });
 
   const [submitted, setSubmitted] = useState(false);
+  const [submittedName, setSubmittedName] = useState('');
   const [activeStep, setActiveStep] = useState(1);
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -188,6 +189,7 @@ const DemandeDevis = () => {
 
       if (!response.ok) throw new Error(`API error: ${response.status}`);
 
+      setSubmittedName(formData.contactName.trim().split(/\s+/)[0] || '');
       setSubmitted(true);
       setActiveStep(1);
       setDocumentFiles([]);
@@ -786,9 +788,9 @@ const DemandeDevis = () => {
               </div>
 
               {submitted && (
-                <div className="mt-6 p-4 bg-green-100 text-green-800 rounded-lg flex items-center justify-center gap-2">
-                  <Check className="w-5 h-5" />
-                  {t('devis.emailOpened')}
+                <div className="mt-6 p-4 bg-green-100 text-green-800 rounded-lg flex items-center justify-center gap-2 text-center">
+                  <Check className="w-5 h-5 flex-shrink-0" />
+                  {t('devis.emailOpened').replace('{name}', submittedName)}
                 </div>
               )}
 

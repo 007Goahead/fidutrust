@@ -251,7 +251,7 @@ export const translations = {
     message: { fr: 'Message', en: 'Message', nl: 'Bericht' },
     messagePlaceholder: { fr: 'Décrivez votre activité et vos besoins...', en: 'Describe your activity and needs...', nl: 'Beschrijf uw activiteit en behoeften...' },
     sendRequest: { fr: 'Envoyer ma demande', en: 'Send my request', nl: 'Mijn aanvraag verzenden' },
-    emailOpened: { fr: 'Votre demande a bien été envoyée, nous revenons vers vous sous 24h ouvrées !', en: 'Your request has been sent, we will get back to you within 24 business hours!', nl: 'Uw aanvraag is verzonden, we nemen binnen 24 werkuren contact met u op!' },
+    emailOpened: { fr: 'Merci {name}, votre demande a bien été envoyée, nous revenons vers vous sous 24h ouvrées !', en: 'Thank you {name}, your request has been sent, we will get back to you within 24 business hours!', nl: 'Bedankt {name}, uw aanvraag is verzonden, we nemen binnen 24 werkuren contact met u op!' },
     privacyNotice: { fr: 'En soumettant ce formulaire, vous acceptez notre politique de confidentialité.', en: 'By submitting this form, you accept our privacy policy.', nl: 'Door dit formulier in te dienen, accepteert u ons privacybeleid.' },
   },
 
@@ -331,7 +331,7 @@ export const translations = {
     selected: { fr: 'sélectionné(s)', en: 'selected', nl: 'geselecteerd' },
     sendQuoteRequest: { fr: 'Envoyer ma demande de devis', en: 'Send my quote request', nl: 'Mijn offerteaanvraag verzenden' },
     sending: { fr: 'Envoi en cours...', en: 'Sending...', nl: 'Verzenden...' },
-    emailOpened: { fr: 'Votre demande a bien été envoyée, nous revenons vers vous sous 24h ouvrées !', en: 'Your request has been sent, we will get back to you within 24 business hours!', nl: 'Uw aanvraag is verzonden, we nemen binnen 24 werkuren contact met u op!' },
+    emailOpened: { fr: 'Merci {name}, nous avons bien reçu votre demande et revenons vers vous dans les plus brefs délais !', en: 'Thank you {name}, we have received your request and will get back to you as soon as possible!', nl: 'Bedankt {name}, we hebben uw aanvraag ontvangen en nemen zo snel mogelijk contact met u op!' },
     submitError: { fr: 'Une erreur est survenue. Merci de réessayer ou de nous écrire directement à Info@fidutrust.eu.', en: 'An error occurred. Please try again or email us directly at Info@fidutrust.eu.', nl: 'Er is een fout opgetreden. Probeer opnieuw of mail ons rechtstreeks op Info@fidutrust.eu.' },
     privacyNotice: { fr: 'En soumettant ce formulaire, vous acceptez notre politique de confidentialité. Vos données sont traitées conformément au RGPD.', en: 'By submitting this form, you accept our privacy policy. Your data is processed in accordance with GDPR.', nl: 'Door dit formulier in te dienen, accepteert u ons privacybeleid. Uw gegevens worden verwerkt in overeenstemming met de AVG.' },
     vatNumber: { fr: 'N° TVA / BCE', en: 'VAT / company number', nl: 'BTW / KBO-nummer' },
