@@ -134,8 +134,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ClickUp sync is best-effort: the lead is already safely stored in Supabase,
   // so a ClickUp hiccup must never fail the visitor's submission.
   let clickupTaskUrl: string | null = null;
+  let clickupError: string | null = null;
 
-  if (CLICKUP_TOKEN) {
+  if (!CLICKUP_TOKEN) {
+    clickupError = 'CLICKUP_API_TOKEN is not set in the server environment';
+    console.error(clickupError);
+  } else {
     try {
       const needsText = needs.map((k) => NEEDS_TEXT[k] || k).join(', ') || '-';
 
@@ -212,12 +216,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           })
           .eq('id', lead.id);
       } else {
-        console.error('ClickUp task creation failed', created);
+        clickupError = `ClickUp task creation failed (HTTP ${createResp.status}): ${JSON.stringify(created).slice(0, 300)}`;
+        console.error(clickupError);
       }
     } catch (err) {
-      console.error('ClickUp sync failed', err);
+      clickupError = `ClickUp sync threw: ${err instanceof Error ? err.message : String(err)}`;
+      console.error(clickupError);
     }
   }
 
-  res.status(200).json({ ok: true, leadId: lead.id, clickupTaskUrl });
+  res.status(200).json({ ok: true, leadId: lead.id, clickupTaskUrl, clickupError });
 }
