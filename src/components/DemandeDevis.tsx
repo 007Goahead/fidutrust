@@ -788,23 +788,29 @@ const DemandeDevis = () => {
                 </button>
               </div>
 
+              <p className="text-xs text-gray-500 text-center mt-6">
+                {t('devis.privacyNotice')}
+              </p>
+            </div>
+          )}
+
+          {/* Rendered outside the per-step block: handleSubmit resets activeStep to 1
+              on success, which would otherwise unmount this before it's ever seen. */}
+          {(submitted || submitError) && (
+            <div className="px-8 md:px-12 pb-8 md:pb-12">
               {submitted && (
-                <div className="mt-6 p-4 bg-green-100 text-green-800 rounded-lg flex items-center justify-center gap-2 text-center">
+                <div className="p-4 bg-green-100 text-green-800 rounded-lg flex items-center justify-center gap-2 text-center">
                   <Check className="w-5 h-5 flex-shrink-0" />
                   {t('devis.emailOpened').replace('{name}', submittedName)}
                 </div>
               )}
 
               {submitError && (
-                <div className="mt-6 p-4 bg-red-100 text-red-800 rounded-lg flex items-center justify-center gap-2">
+                <div className="p-4 bg-red-100 text-red-800 rounded-lg flex items-center justify-center gap-2">
                   <AlertCircle className="w-5 h-5" />
                   {submitError}
                 </div>
               )}
-
-              <p className="text-xs text-gray-500 text-center mt-6">
-                {t('devis.privacyNotice')}
-              </p>
             </div>
           )}
         </form>
