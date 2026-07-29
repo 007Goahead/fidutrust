@@ -238,7 +238,7 @@ const DemandeDevis = () => {
   const canProceedStep1 = formData.structureType !== '';
   const canProceedStep2 = formData.invoiceVolume !== '';
   const canProceedStep3 = Object.values(formData.needs).some(v => v);
-  const canSubmit = formData.contactName && formData.email && canProceedStep1 && canProceedStep2;
+  const canSubmit = formData.contactName && formData.email && formData.phone && canProceedStep1 && canProceedStep2;
 
   const needsOptions = [
     { key: 'comptabilite', label: t('devis.accountingEntry'), icon: Calculator, description: t('devis.accountingEntryDesc') },
@@ -523,13 +523,14 @@ const DemandeDevis = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">
-                    {t('devis.phone')}
+                    {t('devis.phone')} *
                   </label>
                   <input
                     type="tel"
                     name="phone"
                     value={formData.phone}
                     onChange={handleInputChange}
+                    required
                     placeholder="+32 XXX XX XX XX"
                     className="w-full p-3 border border-gray-300 rounded-lg focus:border-[#C6A664] focus:ring-2 focus:ring-[#C6A664]/20 outline-none transition-all"
                   />

@@ -7,6 +7,7 @@ const Contact = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    phone: '',
     type: 'societe',
     formula: '',
     message: ''
@@ -29,6 +30,7 @@ const Contact = () => {
           sourceForm: 'contact',
           contactName: formData.name,
           email: formData.email,
+          phone: formData.phone,
           structureType: formData.type,
           message: `${t('contact.desiredFormula')}: ${formData.formula || '-'}\n\n${formData.message}`,
           language,
@@ -39,7 +41,7 @@ const Contact = () => {
 
       setSubmittedName(formData.name.trim().split(/\s+/)[0] || '');
       setSubmitted(true);
-      setFormData({ name: '', email: '', type: 'societe', formula: '', message: '' });
+      setFormData({ name: '', email: '', phone: '', type: 'societe', formula: '', message: '' });
       setTimeout(() => setSubmitted(false), 8000);
     } catch (err) {
       console.error('Contact form submission failed', err);
@@ -111,11 +113,11 @@ const Contact = () => {
           {/* Contact Form */}
           <div className="lg:col-span-2">
             <form onSubmit={handleSubmit} className="bg-white p-8 rounded-2xl shadow-xl">
-              <div className="grid md:grid-cols-2 gap-6 mb-6">
+              <div className="grid md:grid-cols-3 gap-6 mb-6">
                 <div>
                   <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">{t('contact.fullName')} *</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     name="name"
                     value={formData.name}
                     onChange={handleChange}
@@ -126,13 +128,25 @@ const Contact = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">{t('common.email')} *</label>
-                  <input 
-                    type="email" 
+                  <input
+                    type="email"
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
                     required
                     placeholder="jean@exemple.be"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:border-[#C6A664] focus:ring-2 focus:ring-[#C6A664]/20 outline-none transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-[#0D1B2A] mb-2">{t('common.phone')} *</label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    required
+                    placeholder="+32 XXX XX XX XX"
                     className="w-full p-3 border border-gray-300 rounded-lg focus:border-[#C6A664] focus:ring-2 focus:ring-[#C6A664]/20 outline-none transition-all"
                   />
                 </div>
